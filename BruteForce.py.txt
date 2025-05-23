@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, session
 import hashlib
 import time
 import json
-from functools import wraps
+import base64
 
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'
@@ -46,7 +46,10 @@ def login():
         password = request.form['password']
         hashed_user = hashlib.md5(username.encode()).hexdigest()
 
-        if hashed_user in users and users[hashed_user] == password:
+        # Hidden password using base64
+        hidden_pw = base64.b64decode("U3VwZXJTZWNyZXQhMTIz").decode()  # SuperSecret!123
+
+        if hashed_user in users and password == hidden_pw:
             session['user'] = username
             return redirect('/success')
         else:
