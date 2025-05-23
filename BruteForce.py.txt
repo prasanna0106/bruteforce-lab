@@ -1,0 +1,65 @@
+from flask import Flask, render_template, request, redirect, session
+import hashlib
+import time
+import json
+from functools import wraps
+
+app = Flask(__name__)
+app.secret_key = 'supersecretkey'
+
+# Load user database (hashed usernames)
+with open('users.json', 'r') as f:
+    users = json.load(f)
+
+login_attempts = {}
+
+LOCKOUT_THRESHOLD = 3
+LOCKOUT_DURATION = 600  # 10 minutes in seconds
+
+def is_locked(ip):
+    record = login_attempts.get(ip, {"count": 0, "timestamp": 0})
+    if record["count"] >= LOCKOUT_THRESHOLD:
+        elapsed = time.time() - record["timestamp"]
+        if elapsed < LOCKOUT_DURATION:
+            return True, int(LOCKOUT_DURATION - elapsed)
+        else:
+            login_attempts[ip] = {"count": 0, "timestamp": 0}
+    return False, 0
+
+def record_failure(ip):
+    if ip not in login_attempts:
+        login_attempts[ip] = {"count": 1, "timestamp": time.time()}
+    else:
+        login_attempts[ip]["count"] += 1
+        if login_attempts[ip]["count"] == LOCKOUT_THRESHOLD:
+            login_attempts[ip]["timestamp"] = time.time()
+
+@app.route('/', methods=['GET', 'POST'])
+def login():
+    ip = request.remote_addr
+    locked, remaining = is_locked(ip)
+    if locked:
+        return f"Too many failed attempts. Try again in {remaining} seconds."
+
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        hashed_user = hashlib.md5(username.encode()).hexdigest()
+
+        if hashed_user in users and users[hashed_user] == password:
+            session['user'] = username
+            return redirect('/success')
+        else:
+            record_failure(ip)
+            return render_template('login.html', error='Invalid credentials')
+
+    return render_template('login.html')
+
+@app.route('/success')
+def success():
+    if 'user' not in session:
+        return redirect('/')
+    return render_template('success.html', user=session['user'])
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
